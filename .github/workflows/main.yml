@@ -44,7 +44,7 @@ jobs:
             Library-test-project-
             Library-
 
-      - uses: game-ci/unity-test-runner@v2.0-alpha-7
+      - uses: game-ci/unity-test-runner@v2.0.0-alpha-7
         id: testRunner
         with:
           testMode: ${{ matrix.testMode }}
