@@ -1,37 +1,416 @@
-name: GameCI Template 🎮
-
-on: push
+name: Actions 😎
+on:
+  push: { branches: [main] }
+  pull_request:
+    paths-ignore:
+      - '.github/**'
 
 env:
   UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-
+  
 jobs:
-  testAllModes:
-    name: Test in ${{ matrix.testMode }}
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 12.x
+      - run: yarn
+      - run: yarn lint
+      - run: yarn test
+      - run: yarn build || { echo "build command should always succeed" ; exit 61; }
+  #      - run: yarn build --quiet && git diff --quiet action || { echo "ERROR - index.js is different from repository version. Forgot to run `yarn build`?" ; exit 62; }
+
+  testAllModesLikeInTheReadme:
+    name: Test in ${{ matrix.testMode }} on version ${{ matrix.unityVersion }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        projectPath:
+          - unity-project-with-correct-tests
+        unityVersion:
+          - 2019.2.11f1
         testMode:
           - playmode
           - editmode
     steps:
+      ###########################
+      #         Checkout        #
+      ###########################
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          lfs: true
+
+      ###########################
+      #          Cache          #
+      ###########################
+      - uses: actions/cache@v2
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}
+          restore-keys: |
+            Library-
+      - uses: ./
+        id: tests
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: ${{ matrix.testMode }}
+          artifactsPath: ${{ matrix.testMode }}-artifacts
+          customParameters: -profile SomeProfile -someBoolean -someValue exampleValue
+      - uses: actions/upload-artifact@v2
+        with:
+          name: Test results for ${{ matrix.testMode }}
+          path: ${{ steps.tests.outputs.artifactsPath }}
+          retention-days: 14
+
+  testRunnerInAllModes:
+    name: Test all modes ✨
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        projectPath:
+          - unity-project-with-correct-tests
+        unityVersion:
+          - 2019.2.11f1
+    steps:
+      ###########################
+      #         Checkout        #
+      ###########################
       - uses: actions/checkout@v2
         with:
           lfs: true
-      - uses: actions/cache@v2
+
+      ###########################
+      #          Cache          #
+      ###########################
+      - uses: actions/cache@v1.1.0
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-${{ matrix.projectPath }}-
+            Library-
+
+      # Configure test runner
+      - name: Run tests
+        id: allTests
+        uses: ./
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: all
+          # Test implicit artifactsPath, by not setting it
+
+      # Upload artifacts
+      - name: Upload test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: Test results (all)
+          path: ${{ steps.allTests.outputs.artifactsPath }}
+          retention-days: 14
+
+  testRunnerInEditMode:
+    name: Test edit mode 📝
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        unityVersion:
+          - 2019.2.11f1
+        projectPath:
+          - unity-project-with-correct-tests
+    steps:
+      ###########################
+      #         Checkout        #
+      ###########################
+      - uses: actions/checkout@v2
+        with:
+          lfs: true
+
+      ###########################
+      #          Cache          #
+      ###########################
+      - uses: actions/cache@v1.1.0
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-${{ matrix.projectPath }}-
+            Library-
+
+      # Configure test runner
+      - name: Run tests
+        id: editMode
+        uses: ./
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: editmode
+          artifactsPath: artifacts/editmode
+
+      # Upload artifacts
+      - name: Upload test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: Test results (edit mode)
+          path: ${{ steps.editMode.outputs.artifactsPath }}
+          retention-days: 14
+
+  testRunnerInPlayMode:
+    name: Test play mode 📺
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        projectPath:
+          - unity-project-with-correct-tests
+        unityVersion:
+          - 2019.2.11f1
+    steps:
+      ###########################
+      #         Checkout        #
+      ###########################
+      - uses: actions/checkout@v2
+        with:
+          lfs: true
+
+      ###########################
+      #          Cache          #
+      ###########################
+      - uses: actions/cache@v1.1.0
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-${{ matrix.projectPath }}-
+            Library-
+
+      # Configure test runner
+      - name: Run tests
+        id: playMode
+        uses: ./
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: playmode
+          artifactsPath: artifacts/playmode
+
+      # Upload artifacts
+      - name: Upload test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: Test results (play mode)
+          path: ${{ steps.playMode.outputs.artifactsPath }}
+          retention-days: 14
+
+  testEachModeSequentially:
+    name: Test each mode sequentially 👩‍👩‍👧‍👦 # don't try this at home (it's much slower)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        unityVersion:
+          - 2019.2.11f1
+        projectPath:
+          - unity-project-with-correct-tests
+    steps:
+      ###########################
+      #         Checkout        #
+      ###########################
+      - uses: actions/checkout@v2
+        with:
+          lfs: true
+
+      ###########################
+      #          Cache          #
+      ###########################
+      - uses: actions/cache@v1.1.0
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-${{ matrix.projectPath }}-
+            Library-
+
+      # Configure first test runner
+      - name: Tests in editmode 📝
+        uses: ./
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: editmode
+          artifactsPath: artifacts/editmode
+
+      # Configure second test runner
+      - name: Tests in playmode 📺
+        uses: ./
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          testMode: playmode
+          artifactsPath: artifacts/playmode
+
+      # Upload combined artifacts
+      - name: Upload combined test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: Test results (combined)
+          path: artifacts/
+          retention-days: 14
+  buildWebGL:
+    needs: testRunnerInAllModes
+    name: Build for WebGL 🖥️
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Restore LFS cache
+        uses: actions/cache@v2
         id: lfs-cache
         with:
           path: .git/lfs
           key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
-      - uses: game-ci/unity-test-runner@v2
-        id: tests
+
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      - name: Restore Library cache
+        uses: actions/cache@v2
         with:
-          testMode: ${{ matrix.testMode }}
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: ${{ matrix.testMode }} Test Results
+          path: Library
+          key: Library-build-WebGL
+          restore-keys: |
+            Library-build-
+            Library-
+
+      - uses: game-ci/unity-builder@v2
+        with:
+          targetPlatform: WebGL
+
       - uses: actions/upload-artifact@v2
-        if: always()
         with:
-          name: Test results for ${{ matrix.testMode }}
-          path: ${{ steps.tests.outputs.artifactsPath }}
+          name: build-WebGL
+          path: build/WebGL
+
+  buildWindows:
+    needs: testRunnerInAllModes
+    name: Build for Windows 🖥️
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Restore LFS cache
+        uses: actions/cache@v2
+        id: lfs-cache
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
+
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      - name: Restore Library cache
+        uses: actions/cache@v2
+        with:
+          path: Library
+          key: Library-build-StandaloneWindows64
+          restore-keys: |
+            Library-build-
+            Library-
+
+      - uses: game-ci/unity-builder@v2
+        with:
+          targetPlatform: StandaloneWindows64
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: build-StandaloneWindows64
+          path: build/StandaloneWindows64
+
+  buildAndroid:
+    needs: testRunner
+    name: Build for Android 📱
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Restore LFS cache
+        uses: actions/cache@v2
+        id: lfs-cache
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
+
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      - name: Restore Library cache
+        uses: actions/cache@v2
+        with:
+          path: Library
+          key: Library-build-Android
+          restore-keys: |
+            Library-build-
+            Library-
+
+      - uses: game-ci/unity-builder@v2
+        with:
+          targetPlatform: Android
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: build-Android
+          path: build/Android
+
+
+  deployPages:
+    needs: buildWebGL
+    name: Deploy to Github Pages 🚀
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: build-WebGL
+          path: build
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.4
+        with:
+          branch: gh-pages
+          folder: build/WebGL
